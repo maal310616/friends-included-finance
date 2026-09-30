@@ -1,1 +1,31 @@
 # Friends Included Finance
+
+A web dashboard and Telegram bot for recording sales and expenses in the Friends Included wedding-business case.
+
+## Live project
+
+https://friends-included-finance-gtlg.vercel.app
+
+## Features
+
+- Sales form with commission shares that must total 100%.
+- Role-based interface for salespeople, expense reporter, and manager.
+- Records stored in Supabase.
+- Sales also append to the linked Google Sheets Sales tab.
+- Telegram commands: `/start`, `/help`, and `/sale Customer | A or B | amount | description`.
+
+## Demo flow
+
+1. Open the website and choose Richard, Anastasia, or Jean-Claude.
+2. Submit a sale; it is stored as `pending`.
+3. Send the same kind of sale through Telegram, for example:
+   `/sale Olivia Rose | A | 1200 | Wedding planning deposit`.
+4. Check the record in Supabase and the Google Sales sheet.
+
+## Telegram setup
+
+The Vercel project holds the bot token privately. To activate the bot, configure its webhook to point to:
+
+`https://friends-included-finance-gtlg.vercel.app/api/telegram`
+
+No secret keys are stored in this repository.
