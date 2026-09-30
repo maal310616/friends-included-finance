@@ -1,31 +1,43 @@
 # Friends Included Finance
 
-A web dashboard and Telegram bot for recording sales and expenses in the Friends Included wedding-business case.
+Working finance system for the fictional Friends Included Ltd wedding-guest business.
 
-## Live project
+## Live workflow
 
-https://friends-included-finance-gtlg.vercel.app
+1. A salesperson or Kevin submits a sale/expense through the website.
+2. Supabase stores the source record and the site reloads it from there.
+3. The same reference is written to the appropriate Google Sheets tab.
+4. Svetlana can correct a proposed split/allocation and approve it.
+5. A Telegram submission follows the same validation and can receive a decision notification at its original chat.
 
-## Features
+## Demonstration roles
 
-- Sales form with commission shares that must total 100%.
-- Role-based interface for salespeople, expense reporter, and manager.
-- Records stored in Supabase.
-- Sales also append to the linked Google Sheets Sales tab.
-- Telegram commands: `/start`, `/help`, and `/sale Customer | A or B | amount | description`.
+- Richard, Anastasia and Jean-Claude submit sales with a commission split totalling 100%.
+- Kevin submits expenses with a category and proposed allocation.
+- Svetlana is the only role allowed to approve or correct a record and link Telegram identities.
 
-## Demo flow
+## Telegram
 
-1. Open the website and choose Richard, Anastasia, or Jean-Claude.
-2. Submit a sale; it is stored as `pending`.
-3. Send the same kind of sale through Telegram, for example:
-   `/sale Olivia Rose | A | 1200 | Wedding planning deposit`.
-4. Check the record in Supabase and the Google Sales sheet.
+Start the bot, then send `/id`. In the website, select **Svetlana**, open **Link Telegram employee**, and paste the returned user ID and chat ID against the appropriate fictional employee.
 
-## Telegram setup
+Commands:
 
-The Vercel project holds the bot token privately. To activate the bot, configure its webhook to point to:
+```text
+/sale Customer | A or B | amount | description
+/expense Materials, Travel or Other | A, B or overhead | amount | description
+```
 
-`https://friends-included-finance-gtlg.vercel.app/api/telegram`
+Telegram records use their message ID as a unique `TG…` reference. Website records use the assignment references such as `S01` or `E01`.
 
-No secret keys are stored in this repository.
+## Configuration
+
+Keep all credentials in Vercel environment variables only:
+
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY`
+- `TELEGRAM_BOT_TOKEN`
+- `GOOGLE_SHEETS_SPREADSHEET_ID`
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+
+Set the Telegram webhook once after deployment by opening `/api/setup-telegram` on the deployed Vercel URL. Never put tokens or service-account keys in GitHub, the site, or the Sheet.
