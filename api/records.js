@@ -31,7 +31,8 @@ function googleBase64(value) {
 
 async function googleAccessToken() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const rawPrivateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || "";
+  const privateKey = rawPrivateKey.match(/-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----/)?.[0].replace(/\\n/g, "\n");
   if (!email || !privateKey) return null;
   const now = Math.floor(Date.now() / 1000);
   const header = googleBase64({ alg: "RS256", typ: "JWT" });
