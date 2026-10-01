@@ -148,13 +148,15 @@ async function approveSale(record, decision) {
   const response = await supabase(`sales?reference=eq.${encodeURIComponent(record.reference)}`, { method: "PATCH", body: JSON.stringify(update) });
   const body = await response.json();
   if (!response.ok) throw new Error(body.message || "Could not approve the sale.");
-  await syncToSheet("sale", body[0]);
+  let sheetWarning;
+  try { await syncToSheet("sale", body[0]); }
+  catch (error) { sheetWarning = error.message; }
   const changed = [record.proposed_richard_pct, record.proposed_anastasia_pct, record.proposed_jean_claude_pct].some((value, index) => Number(value) !== shares[index]);
   let notificationWarning;
   try {
     await notify(record.originating_telegram_chat_id, `Sale ${record.reference} approved${changed ? " — commission split changed" : ""}.\nSale €${(record.amount_cents / 100).toFixed(2)}; total commission €${(commission.pool / 100).toFixed(2)}.\nRichard: ${shares[0]}% (€${(commission.values[0] / 100).toFixed(2)})\nAnastasia: ${shares[1]}% (€${(commission.values[1] / 100).toFixed(2)})\nJean-Claude: ${shares[2]}% (€${(commission.values[2] / 100).toFixed(2)})`);
   } catch (error) { notificationWarning = error.message; }
-  return { record: body[0], notificationWarning };
+  return { record: body[0], sheetWarning, notificationWarning };
 }
 
 async function approveExpense(record, decision) {
@@ -164,13 +166,15 @@ async function approveExpense(record, decision) {
   const response = await supabase(`expenses?reference=eq.${encodeURIComponent(record.reference)}`, { method: "PATCH", body: JSON.stringify(update) });
   const body = await response.json();
   if (!response.ok) throw new Error(body.message || "Could not allocate the expense.");
-  await syncToSheet("expense", body[0]);
+  let sheetWarning;
+  try { await syncToSheet("expense", body[0]); }
+  catch (error) { sheetWarning = error.message; }
   let notificationWarning;
   try {
     const changed = record.proposed_allocation !== allocation;
     await notify(record.originating_telegram_chat_id, `Expense ${record.reference} ${changed ? "allocation changed" : "allocated"}.\n€${(record.amount_cents / 100).toFixed(2)}: ${record.description}\nProposed: ${record.proposed_allocation}. Final: ${allocation}.`);
   } catch (error) { notificationWarning = error.message; }
-  return { record: body[0], notificationWarning };
+  return { record: body[0], sheetWarning, notificationWarning };
 }
 
 export default async function handler(req, res) {
