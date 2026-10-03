@@ -12,6 +12,15 @@ async function reply(chatId, text) {
   if (!response.ok) throw new Error("Telegram could not send its reply.");
 }
 
+async function botUsername() {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error("Telegram is not configured in Vercel.");
+  const response = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+  const body = await response.json();
+  if (!response.ok || !body.result?.username) throw new Error("Telegram bot profile is unavailable.");
+  return body.result.username;
+}
+
 const help = [
   "✦ Friends Included Finance bot",
   "",
@@ -53,7 +62,14 @@ async function linkedEmployee(message) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).send("Friends Included Telegram endpoint");
+  if (req.method === "GET") {
+    try {
+      return res.status(200).json({ username: await botUsername() });
+    } catch (error) {
+      return res.status(503).json({ error: error.message || "Telegram bot profile is unavailable." });
+    }
+  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
 
   try {
     const message = req.body?.message;
