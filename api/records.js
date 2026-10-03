@@ -234,7 +234,9 @@ export default async function handler(req, res) {
       if (role !== "Svetlana" || !reference || !decision) return json(res, 403, { error: "Only Svetlana can make manager decisions." });
       const found = await recordByReference(reference);
       if (!found) return json(res, 404, { error: "Record not found." });
-      if (found.record.status === "approved") return json(res, 409, { error: "This record is already approved; totals were not changed." });
+      if (found.record.status === "approved" || found.record.status === "allocated") {
+        return json(res, 409, { error: "This record already has a final manager decision; totals were not changed." });
+      }
       const result = found.type === "sale" ? await approveSale(found.record, decision) : await approveExpense(found.record, decision);
       return json(res, 200, result);
     }

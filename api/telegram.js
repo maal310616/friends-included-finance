@@ -167,6 +167,12 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error(error);
+    // A Telegram webhook must still answer visibly when saving fails; otherwise a
+    // user cannot tell whether the record reached the manager queue.
+    try {
+      const chatId = req.body?.message?.chat?.id;
+      if (chatId) await reply(chatId, "I could not save that record. Nothing was confirmed as submitted—please try again or ask Svetlana to check the website's retry notice.");
+    } catch { /* preserve webhook acknowledgement if Telegram delivery also fails */ }
     return res.status(500).json({ ok: false });
   }
 }
