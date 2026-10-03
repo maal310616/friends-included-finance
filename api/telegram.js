@@ -132,9 +132,9 @@ export default async function handler(req, res) {
       const assignmentFormat = parts.length === 5;
       const [reference, description, category, amountText, allocationText] = assignmentFormat
         ? parts : [`TG${message.message_id}`, parts[3], parts[0], parts[2], parts[1]];
-      const allocation = allocationText?.toLowerCase() === "overhead" ? "overhead" : allocationText?.toUpperCase();
+      const allocation = /^(company )?overhead$/i.test(allocationText || "") ? "Company overhead" : allocationText?.toUpperCase();
       const amount = amountFrom(amountText);
-      if (!reference || !['Materials', 'Travel', 'Other'].includes(category) || !['A', 'B', 'overhead'].includes(allocation) || !amount || !description) {
+      if (!reference || !['Materials', 'Travel', 'Other'].includes(category) || !['A', 'B', 'Company overhead'].includes(allocation) || !amount || !description) {
         await reply(chatId, "Almost! Use:\n/expense E01 | description | Materials, Travel or Other | amount | A, B or overhead");
         return res.status(200).json({ ok: true });
       }
@@ -145,8 +145,8 @@ export default async function handler(req, res) {
       type = "expense";
       table = "expenses";
       record = { reference, reporter_id: employee.id, description, category, amount_cents: Math.round(amount * 100),
-        proposed_allocation: allocation, final_allocation: allocation === "overhead" ? "overhead" : null,
-        status: allocation === "overhead" ? "approved" : "awaiting_allocation", submitted_via: "telegram",
+        proposed_allocation: allocation, final_allocation: allocation === "Company overhead" ? "Company overhead" : null,
+        status: allocation === "Company overhead" ? "allocated" : "awaiting_allocation", submitted_via: "telegram",
         originating_telegram_chat_id: chatId, submitted_at: now };
     }
     if (await referenceExists(record.reference)) {
@@ -159,7 +159,7 @@ export default async function handler(req, res) {
 
     try {
       await syncToSheet(type, saved[0]);
-      const status = type === "sale" ? "is pending approval" : (saved[0].status === "approved" ? "is allocated to company overhead" : "is awaiting allocation");
+      const status = type === "sale" ? "is pending approval" : (saved[0].status === "allocated" ? "is allocated to company overhead" : "is awaiting allocation");
       await reply(chatId, `Saved ✦ ${record.reference} ${status} and synced to Google Sheets.`);
     } catch {
       await reply(chatId, `Saved ✦ ${record.reference} was recorded, but Google Sheets needs a retry.`);

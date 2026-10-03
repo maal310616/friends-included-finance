@@ -67,13 +67,15 @@ export async function syncToSheet(type, record) {
   const token = await googleAccessToken();
   if (!spreadsheetId || !token) return { skipped: true };
   const tab = type === "sale" ? "Sales" : "Expenses";
+  const employeeId = type === "sale" ? record.salesperson_id : record.reporter_id;
+  const employee = employeeId ? await readSupabase(`employees?select=name&id=eq.${employeeId}&limit=1`) : [];
   const row = type === "sale"
-    ? [record.reference, record.submitted_at, record.salesperson_id, record.customer, record.project, record.description,
+    ? [record.reference, record.submitted_at, employee[0]?.name || "Unknown employee", record.customer, record.project, record.description,
       record.amount_cents / 100, `${record.proposed_richard_pct}/${record.proposed_anastasia_pct}/${record.proposed_jean_claude_pct}`,
       record.approved_richard_pct == null ? "" : `${record.approved_richard_pct}/${record.approved_anastasia_pct}/${record.approved_jean_claude_pct}`,
       record.richard_commission_cents / 100, record.anastasia_commission_cents / 100, record.jean_claude_commission_cents / 100,
       record.status, record.submitted_via]
-    : [record.reference, record.submitted_at, record.reporter_id, record.description, record.category, record.amount_cents / 100,
+    : [record.reference, record.submitted_at, employee[0]?.name || "Unknown employee", record.description, record.category, record.amount_cents / 100,
       record.proposed_allocation, record.final_allocation || "", record.status, record.submitted_via];
   const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values`;
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -92,6 +94,29 @@ export async function syncToSheet(type, record) {
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message || "Could not update Google Sheets.");
   return { updatedRange: body.updatedRange || body.updates?.updatedRange, updated: rowIndex >= 0 };
+}
+
+const sheetHeaders = {
+  sale: ["Reference", "Submission time", "Salesperson", "Customer", "Project", "Description", "Amount EUR", "Proposed split R A JC", "Approved split R A JC", "Richard commission EUR", "Anastasia commission EUR", "Jean Claude commission EUR", "Status", "Submitted via"],
+  expense: ["Reference", "Submission time", "Reporter", "Description", "Category", "Amount EUR", "Proposed allocation", "Final allocation", "Status", "Submitted via"],
+};
+
+async function rebuildSheets() {
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  const token = await googleAccessToken();
+  if (!spreadsheetId || !token) throw new Error("Google Sheets is not configured.");
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values`;
+  for (const [type, tab] of [["sale", "Sales"], ["expense", "Expenses"]]) {
+    const clear = await fetch(`${base}/${encodeURIComponent(`${tab}!A:Z`)}:clear`, { method: "POST", headers, body: "{}" });
+    if (!clear.ok) throw new Error(`Could not clear the ${tab} sheet.`);
+    const write = await fetch(`${base}/${encodeURIComponent(`${tab}!A1:Z1`)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: [sheetHeaders[type]] }) });
+    if (!write.ok) throw new Error(`Could not write ${tab} headings.`);
+  }
+  const [sales, expenses] = await Promise.all([readSupabase("sales?select=*&order=submitted_at.asc"), readSupabase("expenses?select=*&order=submitted_at.asc")]);
+  for (const record of sales) await syncToSheet("sale", record);
+  for (const record of expenses) await syncToSheet("expense", record);
+  return { sales: sales.length, expenses: expenses.length };
 }
 
 function validSplit(record) {
@@ -133,6 +158,12 @@ async function notify(chatId, text) {
   return { sent: true };
 }
 
+async function linkedChatForEmployee(employeeId) {
+  if (!employeeId) return null;
+  const accounts = await readSupabase(`telegram_accounts?select=telegram_chat_id&employee_id=eq.${employeeId}&limit=1`);
+  return accounts[0]?.telegram_chat_id || null;
+}
+
 async function approveSale(record, decision) {
   const shares = [decision.richard_pct, decision.anastasia_pct, decision.jean_claude_pct].map(Number);
   if (shares.some((value) => !Number.isFinite(value) || value < 0 || value > 100) || shares.reduce((sum, value) => sum + value, 0) !== 100) {
@@ -160,9 +191,10 @@ async function approveSale(record, decision) {
 }
 
 async function approveExpense(record, decision) {
-  const allocation = decision.allocation === "overhead" ? "overhead" : String(decision.allocation || "").toUpperCase();
-  if (!["A", "B", "overhead"].includes(allocation)) throw new Error("Expense allocation must be A, B, or company overhead.");
-  const update = { final_allocation: allocation, status: "approved", allocated_at: new Date().toISOString(), allocated_by: decision.manager_id || null };
+  const submittedAllocation = String(decision.allocation || "").trim();
+  const allocation = /^company overhead$|^overhead$/i.test(submittedAllocation) ? "Company overhead" : submittedAllocation.toUpperCase();
+  if (!["A", "B", "Company overhead"].includes(allocation)) throw new Error("Expense allocation must be A, B, or company overhead.");
+  const update = { final_allocation: allocation, status: "allocated", allocated_at: new Date().toISOString(), allocated_by: decision.manager_id || null };
   const response = await supabase(`expenses?reference=eq.${encodeURIComponent(record.reference)}`, { method: "PATCH", body: JSON.stringify(update) });
   const body = await response.json();
   if (!response.ok) throw new Error(body.message || "Could not allocate the expense.");
@@ -212,13 +244,18 @@ export default async function handler(req, res) {
       if (!found) return json(res, 404, { error: "Record not found." });
       return json(res, 200, { ...found.record, sheet: await syncToSheet(found.type, found.record) });
     }
+    if (action === "rebuildSheets") {
+      if (role !== "Svetlana") return json(res, 403, { error: "Only Svetlana can rebuild the readable Google Sheets copy." });
+      return json(res, 200, await rebuildSheets());
+    }
     if (!record || !["sale", "expense"].includes(type) || !employeeRole[role]) return json(res, 400, { error: "Invalid request." });
     if ((type === "sale" && employeeRole[role] !== "salesperson") || (type === "expense" && employeeRole[role] !== "expense_reporter")) return json(res, 403, { error: `${role} cannot submit this kind of record.` });
     if (!record.reference || !Number.isInteger(record.amount_cents) || record.amount_cents <= 0) return json(res, 400, { error: "Reference and a positive amount are required." });
     if (type === "sale" && (!record.customer || !["A", "B"].includes(record.project) || !record.description || !validSplit(record))) return json(res, 400, { error: "Sales require customer, A or B, description, and a 100% commission split." });
-    if (type === "expense" && (!record.description || !["Materials", "Travel", "Other"].includes(record.category) || !["A", "B", "overhead"].includes(record.proposed_allocation))) return json(res, 400, { error: "Expenses require description, category, and allocation." });
+    if (type === "expense" && (!record.description || !["Materials", "Travel", "Other"].includes(record.category) || !["A", "B", "Company overhead"].includes(record.proposed_allocation))) return json(res, 400, { error: "Expenses require description, category, and allocation." });
     if (await recordByReference(record.reference)) return json(res, 409, { error: "Duplicate reference refused." });
     const table = type === "sale" ? "sales" : "expenses";
+    if (!record.originating_telegram_chat_id) record.originating_telegram_chat_id = await linkedChatForEmployee(type === "sale" ? record.salesperson_id : record.reporter_id);
     const response = await supabase(table, { method: "POST", body: JSON.stringify(record) });
     const body = await response.json();
     if (!response.ok) return json(res, response.status, { error: body.message || "Could not save the record." });
