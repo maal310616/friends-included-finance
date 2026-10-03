@@ -185,7 +185,8 @@ async function approveSale(record, decision) {
   const changed = [record.proposed_richard_pct, record.proposed_anastasia_pct, record.proposed_jean_claude_pct].some((value, index) => Number(value) !== shares[index]);
   let notificationWarning;
   try {
-    await notify(record.originating_telegram_chat_id, `Sale ${record.reference} approved${changed ? " — commission split changed" : ""}.\nSale €${(record.amount_cents / 100).toFixed(2)}; total commission €${(commission.pool / 100).toFixed(2)}.\nRichard: ${shares[0]}% (€${(commission.values[0] / 100).toFixed(2)})\nAnastasia: ${shares[1]}% (€${(commission.values[1] / 100).toFixed(2)})\nJean-Claude: ${shares[2]}% (€${(commission.values[2] / 100).toFixed(2)})`);
+    const notice = await notify(record.originating_telegram_chat_id, `Sale ${record.reference} approved${changed ? " — commission split changed" : ""}.\nSale €${(record.amount_cents / 100).toFixed(2)}; total commission €${(commission.pool / 100).toFixed(2)}.\nRichard: ${shares[0]}% (€${(commission.values[0] / 100).toFixed(2)})\nAnastasia: ${shares[1]}% (€${(commission.values[1] / 100).toFixed(2)})\nJean-Claude: ${shares[2]}% (€${(commission.values[2] / 100).toFixed(2)})`);
+    if (notice.skipped) notificationWarning = "No linked Telegram private chat was available for this employee.";
   } catch (error) { notificationWarning = error.message; }
   return { record: body[0], sheetWarning, notificationWarning };
 }
@@ -204,7 +205,8 @@ async function approveExpense(record, decision) {
   let notificationWarning;
   try {
     const changed = record.proposed_allocation !== allocation;
-    await notify(record.originating_telegram_chat_id, `Expense ${record.reference} ${changed ? "allocation changed" : "allocated"}.\n€${(record.amount_cents / 100).toFixed(2)}: ${record.description}\nProposed: ${record.proposed_allocation}. Final: ${allocation}.`);
+    const notice = await notify(record.originating_telegram_chat_id, `Expense ${record.reference} ${changed ? "allocation changed" : "allocated"}.\n€${(record.amount_cents / 100).toFixed(2)}: ${record.description}\nProposed: ${record.proposed_allocation}. Final: ${allocation}.`);
+    if (notice.skipped) notificationWarning = "No linked Telegram private chat was available for this employee.";
   } catch (error) { notificationWarning = error.message; }
   return { record: body[0], sheetWarning, notificationWarning };
 }
@@ -252,6 +254,9 @@ export default async function handler(req, res) {
     }
     if (!record || !["sale", "expense"].includes(type) || !employeeRole[role]) return json(res, 400, { error: "Invalid request." });
     if ((type === "sale" && employeeRole[role] !== "salesperson") || (type === "expense" && employeeRole[role] !== "expense_reporter")) return json(res, 403, { error: `${role} cannot submit this kind of record.` });
+    const submitterId = type === "sale" ? record.salesperson_id : record.reporter_id;
+    const submitter = submitterId ? await readSupabase(`employees?select=id,role&id=eq.${submitterId}&limit=1`) : [];
+    if (submitter[0]?.role !== employeeRole[role]) return json(res, 403, { error: "The selected employee cannot submit for this role." });
     if (!record.reference || !Number.isInteger(record.amount_cents) || record.amount_cents <= 0) return json(res, 400, { error: "Reference and a positive amount are required." });
     if (type === "sale" && (!record.customer || !["A", "B"].includes(record.project) || !record.description || !validSplit(record))) return json(res, 400, { error: "Sales require customer, A or B, description, and a 100% commission split." });
     if (type === "expense" && (!record.description || !["Materials", "Travel", "Other"].includes(record.category) || !["A", "B", "Company overhead"].includes(record.proposed_allocation))) return json(res, 400, { error: "Expenses require description, category, and allocation." });
