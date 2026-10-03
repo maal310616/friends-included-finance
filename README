@@ -4,11 +4,11 @@ Working finance system for the fictional Friends Included Ltd wedding-guest busi
 
 ## Live workflow
 
-1. A salesperson or Kevin submits a sale/expense through the website.
+1. A salesperson or Kevin submits a sale/expense through the website or Telegram.
 2. Supabase stores the source record and the site reloads it from there.
-3. The same reference is written to the appropriate Google Sheets tab.
+3. The same reference is upserted into the appropriate Google Sheets tab, so a manager correction never creates a duplicate row.
 4. Svetlana can correct a proposed split/allocation and approve it.
-5. A Telegram submission follows the same validation and can receive a decision notification at its original chat.
+5. Telegram submissions receive a saved/failed result, and the linked private chat receives the manager decision.
 
 ## Demonstration roles
 
@@ -18,16 +18,16 @@ Working finance system for the fictional Friends Included Ltd wedding-guest busi
 
 ## Telegram
 
-Start the bot, then send `/id`. In the website, select **Svetlana**, open **Link Telegram employee**, and paste the returned user ID and chat ID against the appropriate fictional employee.
+Open [@LindaFriendsIncludedBot](https://t.me/LindaFriendsIncludedBot), then send `/id`. In the website, select **Svetlana**, open **Link Telegram employee**, and paste the returned user ID and chat ID against the appropriate fictional employee. The page keeps a visible saved-link receipt.
 
 Commands:
 
 ```text
-/sale Customer | A or B | amount | description
-/expense Materials, Travel or Other | A, B or overhead | amount | description
+/sale S01 | Customer | A or B | description | amount | Richard % | Anastasia % | Jean-Claude %
+/expense E01 | description | Materials, Travel or Other | amount | A, B or overhead
 ```
 
-Telegram records use their message ID as a unique `TG…` reference. Website records use the assignment references such as `S01` or `E01`.
+Use each reference once: for example `S01` or `E01`. The bot and server refuse a duplicate reference safely. If a Google Sheets write fails after Supabase saves the source record, Svetlana can use **Retry Google Sheets sync**. The manager page also offers a readable Sheet rebuild from the Supabase source of truth.
 
 ## Configuration
 
