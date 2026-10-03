@@ -207,6 +207,7 @@ export default async function handler(req, res) {
       return json(res, 200, result);
     }
     if (action === "retrySync") {
+      if (role !== "Svetlana") return json(res, 403, { error: "Only Svetlana can retry a Sheet sync." });
       const found = await recordByReference(reference);
       if (!found) return json(res, 404, { error: "Record not found." });
       return json(res, 200, { ...found.record, sheet: await syncToSheet(found.type, found.record) });

@@ -16,11 +16,11 @@ const help = [
   "✦ Friends Included Finance bot",
   "",
   "Use /id to get the two numbers Svetlana needs to link your staff role.",
-  "Use /sale Customer | A or B | amount | description",
-  "Use /expense Category | A, B or overhead | amount | description",
+  "Use /sale S01 | Customer | A or B | description | amount | Richard % | Anastasia % | Jean-Claude %",
+  "Use /expense E01 | description | Materials, Travel or Other | amount | A, B or overhead",
   "Example:",
-  "/sale Olivia Rose | A | 1200 | Wedding planning deposit",
-  "/expense Travel | B | 80 | Taxi for the grandmother",
+  "/sale S01 | Olivia Rose | A | Wedding planning deposit | 1200 | 50 | 30 | 20",
+  "/expense E01 | Flowers and decorations | Materials | 250 | A",
   "",
   "Sales wait for Svetlana's approval. Expenses for A or B wait for allocation; overhead is allocated immediately.",
   "Every saved record appears in Supabase and the matching Google Sheet tab.",
@@ -29,6 +29,20 @@ const help = [
 function amountFrom(value) {
   const amount = Number(value?.replace(",", "."));
   return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+function splitFrom(values) {
+  const split = values.map((value) => Number(value?.trim()));
+  return split.length === 3 && split.every((value) => Number.isFinite(value) && value >= 0 && value <= 100)
+    && split.reduce((sum, value) => sum + value, 0) === 100 ? split : null;
+}
+
+async function referenceExists(reference) {
+  const [sales, expenses] = await Promise.all([
+    readSupabase(`sales?select=id&reference=eq.${encodeURIComponent(reference)}&limit=1`),
+    readSupabase(`expenses?select=id&reference=eq.${encodeURIComponent(reference)}&limit=1`),
+  ]);
+  return Boolean(sales[0] || expenses[0]);
 }
 
 async function linkedEmployee(message) {
@@ -68,7 +82,6 @@ export default async function handler(req, res) {
     }
 
     const now = new Date().toISOString();
-    const reference = `TG${message.message_id}`;
     const employee = await linkedEmployee(message);
     if (!employee) {
       await reply(chatId, "Your Telegram account is not linked to a fictional employee yet. Send /id, then ask Svetlana to link the two numbers in the manager setup.");
@@ -78,10 +91,14 @@ export default async function handler(req, res) {
     let record;
     let table;
     if (sale) {
-      const [customer, project, amountText, description] = sale[1].split("|").map((part) => part.trim());
+      const parts = sale[1].split("|").map((part) => part.trim());
+      const assignmentFormat = parts.length === 8;
+      const [reference, customer, project, description, amountText, ...percentages] = assignmentFormat
+        ? parts : [`TG${message.message_id}`, parts[0], parts[1], parts[3], parts[2], "50", "30", "20"];
       const amount = amountFrom(amountText);
-      if (!customer || !["A", "B"].includes(project?.toUpperCase()) || !amount || !description) {
-        await reply(chatId, "Almost! Use:\n/sale Customer | A or B | amount | description");
+      const proposed = splitFrom(percentages);
+      if (!reference || !customer || !["A", "B"].includes(project?.toUpperCase()) || !amount || !description || !proposed) {
+        await reply(chatId, "Almost! Use:\n/sale S01 | Customer | A or B | description | amount | Richard % | Anastasia % | Jean-Claude %\nThe three percentages must total 100.");
         return res.status(200).json({ ok: true });
       }
       if (employee.role !== "salesperson") {
@@ -91,15 +108,18 @@ export default async function handler(req, res) {
       type = "sale";
       table = "sales";
       record = { reference, salesperson_id: employee.id, customer, project: project.toUpperCase(), description,
-        amount_cents: Math.round(amount * 100), proposed_richard_pct: 50, proposed_anastasia_pct: 30,
-        proposed_jean_claude_pct: 20, status: "pending", submitted_via: "telegram",
+        amount_cents: Math.round(amount * 100), proposed_richard_pct: proposed[0], proposed_anastasia_pct: proposed[1],
+        proposed_jean_claude_pct: proposed[2], status: "pending", submitted_via: "telegram",
         originating_telegram_chat_id: chatId, submitted_at: now };
     } else {
-      const [category, allocationText, amountText, description] = expense[1].split("|").map((part) => part.trim());
+      const parts = expense[1].split("|").map((part) => part.trim());
+      const assignmentFormat = parts.length === 5;
+      const [reference, description, category, amountText, allocationText] = assignmentFormat
+        ? parts : [`TG${message.message_id}`, parts[3], parts[0], parts[2], parts[1]];
       const allocation = allocationText?.toLowerCase() === "overhead" ? "overhead" : allocationText?.toUpperCase();
       const amount = amountFrom(amountText);
-      if (!['Materials', 'Travel', 'Other'].includes(category) || !['A', 'B', 'overhead'].includes(allocation) || !amount || !description) {
-        await reply(chatId, "Almost! Use:\n/expense Materials, Travel or Other | A, B or overhead | amount | description");
+      if (!reference || !['Materials', 'Travel', 'Other'].includes(category) || !['A', 'B', 'overhead'].includes(allocation) || !amount || !description) {
+        await reply(chatId, "Almost! Use:\n/expense E01 | description | Materials, Travel or Other | amount | A, B or overhead");
         return res.status(200).json({ ok: true });
       }
       if (employee.role !== "expense_reporter") {
@@ -113,6 +133,10 @@ export default async function handler(req, res) {
         status: allocation === "overhead" ? "approved" : "awaiting_allocation", submitted_via: "telegram",
         originating_telegram_chat_id: chatId, submitted_at: now };
     }
+    if (await referenceExists(record.reference)) {
+      await reply(chatId, `Reference ${record.reference} already exists. It was not saved again.`);
+      return res.status(200).json({ ok: true });
+    }
     const savedResponse = await supabase(table, { method: "POST", body: JSON.stringify(record) });
     const saved = await savedResponse.json();
     if (!savedResponse.ok) throw new Error(saved.message || "Could not save the sale.");
@@ -120,9 +144,9 @@ export default async function handler(req, res) {
     try {
       await syncToSheet(type, saved[0]);
       const status = type === "sale" ? "is pending approval" : (saved[0].status === "approved" ? "is allocated to company overhead" : "is awaiting allocation");
-      await reply(chatId, `Saved ✦ ${reference} ${status} and synced to Google Sheets.`);
+      await reply(chatId, `Saved ✦ ${record.reference} ${status} and synced to Google Sheets.`);
     } catch {
-      await reply(chatId, `Saved ✦ ${reference} was recorded, but Google Sheets needs a retry.`);
+      await reply(chatId, `Saved ✦ ${record.reference} was recorded, but Google Sheets needs a retry.`);
     }
     return res.status(200).json({ ok: true });
   } catch (error) {
