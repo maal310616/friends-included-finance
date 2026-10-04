@@ -158,12 +158,6 @@ async function notify(chatId, text) {
   return { sent: true };
 }
 
-async function linkedChatForEmployee(employeeId) {
-  if (!employeeId) return null;
-  const accounts = await readSupabase(`telegram_accounts?select=chat_id&employee_id=eq.${employeeId}&limit=1`);
-  return accounts[0]?.chat_id || null;
-}
-
 async function approveSale(record, decision) {
   const shares = [decision.richard_pct, decision.anastasia_pct, decision.jean_claude_pct].map(Number);
   if (shares.some((value) => !Number.isFinite(value) || value < 0 || value > 100) || shares.reduce((sum, value) => sum + value, 0) !== 100) {
@@ -262,7 +256,10 @@ export default async function handler(req, res) {
     if (type === "expense" && (!record.description || !["Materials", "Travel", "Other"].includes(record.category) || !["A", "B", "Company overhead"].includes(record.proposed_allocation))) return json(res, 400, { error: "Expenses require description, category, and allocation." });
     if (await recordByReference(record.reference)) return json(res, 409, { error: "Duplicate reference refused." });
     const table = type === "sale" ? "sales" : "expenses";
-    if (!record.originating_telegram_chat_id) record.originating_telegram_chat_id = await linkedChatForEmployee(type === "sale" ? record.salesperson_id : record.reporter_id);
+    // Website entries have no Telegram conversation to notify. Telegram entries
+    // already arrive with their own chat id from api/telegram.js, so a normal
+    // website submission must not depend on the optional linking table.
+    if (!record.originating_telegram_chat_id) record.originating_telegram_chat_id = null;
     const response = await supabase(table, { method: "POST", body: JSON.stringify(record) });
     const body = await response.json();
     if (!response.ok) return json(res, response.status, { error: body.message || "Could not save the record." });
