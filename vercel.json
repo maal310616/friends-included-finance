@@ -1,1 +1,1 @@
-{"cleanUrls":true,"rewrites":[{"source":"/live-data","destination":"/api/records"}]}
+{"cleanUrls":true,"rewrites":[{"source":"/live-data","destination":"/api/records"}],"headers":[{"source":"/","headers":[{"key":"Cache-Control","value":"no-store, max-age=0"}]}]}
