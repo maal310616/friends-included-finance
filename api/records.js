@@ -255,6 +255,22 @@ export default async function handler(req, res) {
       if (role !== "Svetlana") return json(res, 403, { error: "Only Svetlana can rebuild the readable Google Sheets copy." });
       return json(res, 200, await rebuildSheets());
     }
+    if (action === "repairHomeworkDescriptions") {
+      if (role !== "Svetlana") return json(res, 403, { error: "Only Svetlana can repair the completed test data." });
+      const corrections = [
+        ["E03", "Monthly company website subscription"],
+        ["E06", "Company telephone subscription"],
+      ];
+      const repaired = [];
+      for (const [expenseReference, description] of corrections) {
+        const response = await supabase(`expenses?reference=eq.${expenseReference}`, { method: "PATCH", body: JSON.stringify({ description }) });
+        const body = await response.json();
+        if (!response.ok || !body[0]) return json(res, response.status || 500, { error: `Could not correct ${expenseReference}.` });
+        repaired.push(body[0]);
+      }
+      for (const expense of repaired) await syncToSheet("expense", expense);
+      return json(res, 200, { repaired: repaired.map((expense) => expense.reference) });
+    }
     if (!record || !["sale", "expense"].includes(type) || !employeeRole[role]) return json(res, 400, { error: "Invalid request." });
     if ((type === "sale" && employeeRole[role] !== "salesperson") || (type === "expense" && employeeRole[role] !== "expense_reporter")) return json(res, 403, { error: `${role} cannot submit this kind of record.` });
     const submitterId = type === "sale" ? record.salesperson_id : record.reporter_id;
