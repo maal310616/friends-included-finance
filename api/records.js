@@ -38,7 +38,8 @@ async function googleAccessToken() {
   const rawPrivateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || "";
   const privateKey = rawPrivateKey.match(/-----BEGIN PRIVATE KEY-----(?:\\n|\n)?[\s\S]*?-----END PRIVATE KEY-----/)?.[0].replace(/\\n/g, "\n");
   if (!email || !privateKey) return null;
-  const now = Math.floor(Date.now() / 1000);
+  // Allow small clock differences between Vercel and Google's token service.
+  const now = Math.floor(Date.now() / 1000) - 60;
   const header = googleBase64({ alg: "RS256", typ: "JWT" });
   const claims = googleBase64({
     iss: email,
