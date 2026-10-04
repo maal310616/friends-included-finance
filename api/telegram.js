@@ -110,9 +110,21 @@ export default async function handler(req, res) {
     let table;
     if (sale) {
       const parts = sale[1].split("|").map((part) => part.trim());
-      const assignmentFormat = parts.length === 8;
-      const [reference, customer, project, description, amountText, ...percentages] = assignmentFormat
-        ? parts : [`TG${message.message_id}`, parts[0], parts[1], parts[3], parts[2], "50", "30", "20"];
+      let reference, customer, project, description, amountText, percentages;
+      // Support the complete assignment format, the earlier labelled short
+      // format, and the original short format that creates a TG reference.
+      if (parts.length === 8) {
+        [reference, customer, project, description, amountText, ...percentages] = parts;
+      } else if (parts.length === 5 && /^S\d+$/i.test(parts[0]) && ["A", "B"].includes(parts[2]?.toUpperCase())) {
+        [reference, customer, project, amountText, description] = parts;
+        percentages = ["50", "30", "20"];
+      } else if (parts.length === 4 && ["A", "B"].includes(parts[1]?.toUpperCase())) {
+        [customer, project, amountText, description] = parts;
+        reference = `TG${message.message_id}`;
+        percentages = ["50", "30", "20"];
+      } else {
+        percentages = [];
+      }
       const amount = amountFrom(amountText);
       const proposed = splitFrom(percentages);
       if (!reference || !customer || !["A", "B"].includes(project?.toUpperCase()) || !amount || !description || !proposed) {
