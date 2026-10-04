@@ -1,1 +1,1 @@
-{"cleanUrls":true}
+{"cleanUrls":true,"rewrites":[{"source":"/live-data","destination":"/api/records"}]}
