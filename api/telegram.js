@@ -7,7 +7,9 @@ async function reply(chatId, text) {
   const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    // Bot confirmations remain visible in the chat without creating noisy push
+    // notifications during a class demo or a webhook retry.
+    body: JSON.stringify({ chat_id: chatId, text, disable_notification: true }),
   });
   if (!response.ok) throw new Error("Telegram could not send its reply.");
 }
@@ -167,12 +169,13 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error(error);
-    // A Telegram webhook must still answer visibly when saving fails; otherwise a
-    // user cannot tell whether the record reached the manager queue.
+    // Telegram retries every non-2xx webhook response. Returning 500 here was
+    // the source of repeated error messages for one incoming command. Reply once
+    // if possible, then always acknowledge the update so it is never replayed.
     try {
       const chatId = req.body?.message?.chat?.id;
       if (chatId) await reply(chatId, "I could not save that record. Nothing was confirmed as submitted—please try again or ask Svetlana to check the website's retry notice.");
     } catch { /* preserve webhook acknowledgement if Telegram delivery also fails */ }
-    return res.status(500).json({ ok: false });
+    return res.status(200).json({ ok: true, handledWithError: true });
   }
 }
