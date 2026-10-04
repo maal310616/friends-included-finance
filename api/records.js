@@ -109,7 +109,9 @@ async function rebuildSheets() {
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values`;
   for (const [type, tab] of [["sale", "Sales"], ["expense", "Expenses"]]) {
-    const clear = await fetch(`${base}/${encodeURIComponent(`${tab}!A:Z`)}:clear`, { method: "POST", headers, body: "{}" });
+    // Clear a generous range: earlier spreadsheet versions may have left values
+    // beyond column Z, which must not survive a clean ledger rebuild.
+    const clear = await fetch(`${base}/${encodeURIComponent(`${tab}!A:ZZ`)}:clear`, { method: "POST", headers, body: "{}" });
     if (!clear.ok) throw new Error(`Could not clear the ${tab} sheet.`);
     const write = await fetch(`${base}/${encodeURIComponent(`${tab}!A1:Z1`)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: [sheetHeaders[type]] }) });
     if (!write.ok) throw new Error(`Could not write ${tab} headings.`);
