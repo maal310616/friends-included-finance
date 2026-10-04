@@ -160,8 +160,8 @@ async function notify(chatId, text) {
 
 async function linkedChatForEmployee(employeeId) {
   if (!employeeId) return null;
-  const accounts = await readSupabase(`telegram_accounts?select=telegram_chat_id&employee_id=eq.${employeeId}&limit=1`);
-  return accounts[0]?.telegram_chat_id || null;
+  const accounts = await readSupabase(`telegram_accounts?select=chat_id&employee_id=eq.${employeeId}&limit=1`);
+  return accounts[0]?.chat_id || null;
 }
 
 async function approveSale(record, decision) {
@@ -226,7 +226,7 @@ export default async function handler(req, res) {
     if (action === "linkTelegram") {
       if (role !== "Svetlana" || !employeeId || !telegramUserId || !chatId) return json(res, 403, { error: "Only Svetlana can link a Telegram employee." });
       const existing = await readSupabase(`telegram_accounts?select=id&telegram_user_id=eq.${encodeURIComponent(telegramUserId)}&limit=1`);
-      const payload = { employee_id: employeeId, telegram_user_id: String(telegramUserId), telegram_chat_id: String(chatId) };
+      const payload = { employee_id: employeeId, telegram_user_id: String(telegramUserId), chat_id: String(chatId) };
       const response = await supabase(existing[0] ? `telegram_accounts?id=eq.${existing[0].id}` : "telegram_accounts", { method: existing[0] ? "PATCH" : "POST", body: JSON.stringify(payload) });
       const body = await response.json();
       if (!response.ok) return json(res, response.status, { error: body.message || "Could not save the Telegram link." });

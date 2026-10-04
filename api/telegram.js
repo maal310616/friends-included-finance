@@ -55,7 +55,7 @@ async function referenceExists(reference) {
 }
 
 async function linkedEmployee(message) {
-  const accounts = await readSupabase(`telegram_accounts?select=employee_id,telegram_user_id,telegram_chat_id&telegram_user_id=eq.${encodeURIComponent(message.from.id)}&limit=1`);
+  const accounts = await readSupabase(`telegram_accounts?select=employee_id,telegram_user_id,chat_id&telegram_user_id=eq.${encodeURIComponent(message.from.id)}&limit=1`);
   if (!accounts[0]?.employee_id) return null;
   const employees = await readSupabase(`employees?select=id,name,role&id=eq.${accounts[0].employee_id}&limit=1`);
   return employees[0] || null;
